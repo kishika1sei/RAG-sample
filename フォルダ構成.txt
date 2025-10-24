@@ -1,0 +1,28 @@
+project/
+├─ app/
+│  ├─ __init__.py           # アプリファクトリ + 設定読み込み
+│  ├─ routes.py             # Web画面用ルート（/）
+│  ├─ api.py                # RAG API（/ask, /ingest）
+│  ├─ services/             # 業務ロジックの置き場
+│  │  ├─ rag.py             # RAGの統合（retrieve→prompt→generate）
+│  │  ├─ vectorstore.py     # FAISS/Chromaなどの抽象化
+│  │  ├─ pdf_utils.py       # PDF抽出・チャンク
+│  │  ├─ serp_utils.py            # SerpAPI呼び出し
+│  │  └─ llm_utils.py             # OpenAI等のLLM呼び出し
+│  ├─ models.py             # （必要なら）SQLite ORM/テーブル定義
+│  ├─ templates/
+│  │  └─ index.html
+│  └─ static/               # 将来のCSS/JS/画像
+├─ instance/
+│  └─ app.sqlite            # SQLite実体（Git管理外にしやすい）
+├─ data/
+│  ├─ pdf/                  # 取り込むPDF
+│  └─ index/                # ベクトルインデックス（FAISS 等）
+├─ scripts/
+│  └─ ingest.py             # 事前インデックス作成用（バッチ）
+├─ config.py                # Configクラス（Dev/Prod切替）
+├─ run.py                   # エントリ（flask run でもOK）
+├─ requirements.txt
+├─ .env
+├─ .env.sample
+└─ README.md

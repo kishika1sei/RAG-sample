@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="ja">
+<meta charset="utf-8" />
+<title>補助金・支援制度ナビ（RAGデモ）</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:860px;margin:32px auto;padding:0 16px}
+  textarea, input[type="file"]{width:100%}
+  .src{font-size:.9em;opacity:.8}
+  .muted{opacity:.7}
+  table{width:100%;border-collapse:collapse;margin-top:8px}
+  th, td{padding:6px;border-bottom:1px solid #eee;text-align:left}
+</style>
+<h1>補助金・支援制度ナビ（RAGデモ）</h1>
+
+<section>
+  <h3>検索モード</h3>
+  <select id="mode">
+    <option value="doc">Document（ローカル取り込み）</option>
+    <option value="web">Web（SerpAPIで検索）</option>
+    <option value="hybrid">Hybrid（両方）</option>
+  </select>
+</section>
+
+<section>
+  <h3>質問</h3>
+  <textarea id="q" rows="4" placeholder="例：子育て家庭の給付金制度について教えて"></textarea>
+  <div style="margin-top:8px">
+    <button id="ask">送信</button>
+  </div>
+</section>
+
+<section style="margin-top:24px">
+  <h3>結果</h3>
+  <pre id="answer"></pre>
+  <div id="sources"></div>
+</section>
+
+<!-- ここから追加: 投入済みファイル一覧 -->
+<section style="margin-top:24px">
+  <h3>投入済みファイル</h3>
+  {% if not has_index %}
+    <p class="muted">まだインデックスが作成されていません。まずは「再インデックス」を実行してください。</p>
+  {% else %}
+    {% if files and files|length > 0 %}
+      <table aria-label="Indexed documents">
+        <thead><tr><th>ファイル名</th><th>チャンク数</th><th>ページ数</th></tr></thead>
+        <tbody>
+        {% for f in files %}
+          <tr>
+            <td>{{ f.name }}</td>
+            <td>{{ f.chunks }}</td>
+            <td>{{ f.pages if f.pages is not none else "-" }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="muted">インデックスはありますが、ファイルが見つかりませんでした。</p>
+    {% endif %}
+  {% endif %}
+</section>
+<!-- 追加ここまで -->
+
+<hr/>
+<section> 
+  <h3>インデックス作成（PDF / TXT / Markdown）</h3>
+  <p class="muted">ファイルを選んでアップロードすると <code>data/pdf</code> に保存されます。その後「再インデックス」を押すと検索に反映されます。</p>
+
+  <input id="files" type="file" multiple accept=".pdf,.txt,.md,.markdown" />
+  <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap">
+    <button id="upload">アップロード</button>
+    <button id="ingest">再インデックス</button>
+  </div>
+  <pre id="ingestOut"></pre>
+</section>
+
+<script>
+const $ = (s)=>document.querySelector(s);
+
+$("#upload").onclick = async ()=>{
+  const input = $("#files");
+  if (!input.files || input.files.length === 0) {
+    alert("ファイルを選んでください");
+    return;
+  }
+  const fd = new FormData();
+  for (const f of input.files) fd.append("files", f);
+  const r = await fetch("/api/upload", { method:"POST", body: fd });
+  const j = await r.json();
+  $("#ingestOut").textContent = JSON.stringify(j, null, 2);
+  if (j.ok) location.reload(); // 成功時は一覧を更新
+};
+
+$("#ingest").onclick = async ()=>{
+  const r = await fetch("/api/ingest", {method:"POST"});
+  const j = await r.json();
+  $("#ingestOut").textContent = JSON.stringify(j, null, 2);
+  if (j.ok) location.reload(); // 成功時は一覧を更新
+};
+
+$("#ask").onclick = async ()=>{
+  const query = $("#q").value;
+  const mode = $("#mode").value;
+  const r = await fetch("/api/ask", {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({query, mode})
+  });
+  const j = await r.json();
+  if(!j.ok){ $("#answer").textContent = j.error; $("#sources").innerHTML=""; return; }
+  $("#answer").textContent = j.answer;
+  $("#sources").innerHTML = (j.sources || []).map(s => {
+    const u = s.url ? `<a href="${s.url}" target="_blank" rel="noopener noreferrer">${s.title||s.url}</a>` : (s.title||"");
+    const score = s.score!=null ? `（score:${s.score.toFixed? s.score.toFixed(3): s.score}）` : "";
+    const kind = s.kind ? ` [${s.kind}]` : "";
+    return `<div class="src">${u}${score}${kind}</div>`;
+  }).join("");
+};
+</script>
+</html>
