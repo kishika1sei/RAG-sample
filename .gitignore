@@ -1,11 +1,26 @@
-﻿.venv/
+﻿# 仮想環境
+.venv/
+venv/
+
+# Python キャッシュ
 __pycache__/
 *.py[cod]
+*$py.class
+
+# Python ビルド
 *.egg-info/
+build/
+dist/
+
+# 環境ファイル
 .env
+
+# 学習/推論の成果物
 *.pt
 *.pth
 *.onnx
 *.ckpt
 *.bin
+
+# データ
 data/
