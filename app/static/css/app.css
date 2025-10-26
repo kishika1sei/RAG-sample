@@ -1,0 +1,127 @@
+    :root{
+      --yolk-bg: #FFF7D6;      /* 薄い卵黄色 */
+      --yolk-accent: #FDEBA6;  /* もう少し濃い差し色 */
+      --bubble-ai: #ffffff;    /* AIバブル（白） */
+      --bubble-user: #FFFAE6;  /* ユーザバブル（卵黄寄り） */
+      --text-muted: #6c757d;
+    }
+    body{
+      background: linear-gradient(180deg, var(--yolk-bg), #FFFBEA);
+      min-height: 100vh;
+    }
+    header .logo-badge{
+      background: var(--yolk-accent);
+      border: 1px solid rgba(0,0,0,.05);
+    }
+    /* Chat area */
+    .chat-card{
+      background: #fff9dfaa;
+      border: 1px solid rgba(0,0,0,.06);
+      backdrop-filter: blur(2px);
+    }
+    .chat-stream{
+      max-height: 52vh;
+      overflow: auto;
+      padding: .75rem;
+      scroll-behavior: smooth;
+    }
+    .msg{
+      display: flex;
+      gap: .75rem;
+      margin: .5rem 0;
+    }
+    .msg.ai{ flex-direction: row; }
+    .msg.user{ flex-direction: row-reverse; }
+    .avatar{
+      flex: 0 0 36px;
+      width: 36px; height: 36px;
+      border-radius: 50%;
+      display: grid; place-items: center;
+      font-weight: 700; font-size: .8rem;
+      color: #333;
+      background: var(--yolk-accent);
+      border: 1px solid rgba(0,0,0,.06);
+    }
+    .bubble{
+      max-width: min(80%, 820px);
+      padding: .6rem .8rem;
+      border-radius: 14px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      box-shadow: 0 1px 2px rgba(0,0,0,.04);
+      border: 1px solid rgba(0,0,0,.05);
+    }
+    .msg.ai .bubble{
+      background: var(--bubble-ai);
+      border-top-left-radius: 6px;
+    }
+    .msg.user .bubble{
+      background: var(--bubble-user);
+      border-top-right-radius: 6px;
+    }
+    .sources{
+      margin-top: .5rem;
+      border-top: 1px dashed rgba(0,0,0,.1);
+      padding-top: .4rem;
+      font-size: .9rem;
+      color: var(--text-muted);
+    }
+
+    /* Input area */
+    .composer{
+      background: #fff;
+      border: 1px solid rgba(0,0,0,.08);
+      border-radius: 12px;
+      padding: .75rem;
+    }
+
+    /* Tables */
+    table.table thead th{
+      background: var(--yolk-accent);
+    }
+
+    /* 3-dot gray typing indicator (小さめ) */
+    .typing-dots{
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: .35rem .5rem;
+      background: var(--bubble-ai);
+      border: 1px solid rgba(0,0,0,.06);
+      border-radius: 12px;
+    }
+    .typing-dots .dot{
+      width: 6px; height: 6px; border-radius: 50%;
+      background: #9aa0a6;
+      opacity: .7;
+      animation: bounce 1.2s infinite ease-in-out;
+    }
+    .typing-dots .dot:nth-child(2){ animation-delay: .2s; }
+    .typing-dots .dot:nth-child(3){ animation-delay: .4s; }
+
+    @keyframes bounce {
+      0%, 80%, 100% { transform: translateY(0); opacity: .5; }
+      40% { transform: translateY(-4px); opacity: 1; }
+    }
+
+    /* Small helpers */
+    .muted{ color: var(--text-muted); }
+    .section-card{
+      background: #fff;
+      border: 1px solid rgba(0,0,0,.08);
+      border-radius: 12px;
+      padding: 1rem;
+    }
+
+    /* Make select & buttons yolk themed */
+    .btn-yolk{
+      --bs-btn-bg: #ffde59;
+      --bs-btn-border-color: #ffd23e;
+      --bs-btn-hover-bg: #ffd23e;
+      --bs-btn-hover-border-color: #ffc935;
+      --bs-btn-active-bg: #ffc935;
+      --bs-btn-active-border-color: #f5b51d;
+      --bs-btn-color: #333;
+    }
+    .form-select, .form-control{
+      border-color: rgba(0,0,0,.12);
+    }

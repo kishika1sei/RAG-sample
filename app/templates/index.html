@@ -1,121 +1,297 @@
 <!doctype html>
 <html lang="ja">
-<meta charset="utf-8" />
-<title>補助金・支援制度ナビ（RAGデモ）</title>
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<style>
-  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:860px;margin:32px auto;padding:0 16px}
-  textarea, input[type="file"]{width:100%}
-  .src{font-size:.9em;opacity:.8}
-  .muted{opacity:.7}
-  table{width:100%;border-collapse:collapse;margin-top:8px}
-  th, td{padding:6px;border-bottom:1px solid #eee;text-align:left}
-</style>
-<h1>補助金・支援制度ナビ（RAGデモ）</h1>
+<head>
+  <meta charset="utf-8" />
+  <title>補助金・支援制度ナビ（RAGデモ）</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Bootstrap 5 -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- Optional: your custom css (kept) -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+</head>
+<body>
 
-<section>
-  <h3>検索モード</h3>
-  <select id="mode">
-    <option value="doc">Document（ローカル取り込み）</option>
-    <option value="web">Web（SerpAPIで検索）</option>
-    <option value="hybrid">Hybrid（両方）</option>
-  </select>
-</section>
+  <header class="py-3 mb-3 border-bottom" style="background: var(--yolk-bg)">
+    <div class="container">
+      <div class="d-flex align-items-center justify-content-between">
+        <div class="d-flex align-items-center gap-2">
+          <span class="badge rounded-pill logo-badge px-3 py-2">RAGデモ</span>
+          <h1 class="h4 m-0">補助金・支援制度ナビ</h1>
+        </div>
+        <div class="text-muted small">Demo UI (Bootstrap 5)</div>
+      </div>
+    </div>
+  </header>
 
-<section>
-  <h3>質問</h3>
-  <textarea id="q" rows="4" placeholder="例：子育て家庭の給付金制度について教えて"></textarea>
-  <div style="margin-top:8px">
-    <button id="ask">送信</button>
-  </div>
-</section>
+  <main class="container pb-5">
+    <div class="row g-4">
+      <div class="col-lg-8">
 
-<section style="margin-top:24px">
-  <h3>結果</h3>
-  <pre id="answer"></pre>
-  <div id="sources"></div>
-</section>
+        <!-- Chat Card -->
+        <div class="card chat-card shadow-sm">
+          <div class="card-header bg-transparent">
+            <div class="d-flex flex-wrap align-items-center gap-2">
+              <strong>検索モード</strong>
+              <select id="mode" class="form-select form-select-sm w-auto">
+                <option value="doc">Document（ローカル取り込み）</option>
+                <option value="web">Web（SerpAPIで検索）</option>
+                <option value="hybrid">Hybrid（両方）</option>
+              </select>
+              <span id="status" class="ms-auto small text-muted" aria-live="polite"></span>
+            </div>
+          </div>
 
-<!-- ここから追加: 投入済みファイル一覧 -->
-<section style="margin-top:24px">
-  <h3>投入済みファイル</h3>
-  {% if not has_index %}
-    <p class="muted">まだインデックスが作成されていません。まずは「再インデックス」を実行してください。</p>
-  {% else %}
-    {% if files and files|length > 0 %}
-      <table aria-label="Indexed documents">
-        <thead><tr><th>ファイル名</th><th>チャンク数</th><th>ページ数</th></tr></thead>
-        <tbody>
-        {% for f in files %}
-          <tr>
-            <td>{{ f.name }}</td>
-            <td>{{ f.chunks }}</td>
-            <td>{{ f.pages if f.pages is not none else "-" }}</td>
-          </tr>
-        {% endfor %}
-        </tbody>
-      </table>
-    {% else %}
-      <p class="muted">インデックスはありますが、ファイルが見つかりませんでした。</p>
-    {% endif %}
-  {% endif %}
-</section>
-<!-- 追加ここまで -->
+          <div id="chat" class="chat-stream" aria-live="polite" aria-relevant="additions">
+            <!-- 初期ガイダンス -->
+            <div class="msg ai">
+              <div class="avatar">AI</div>
+              <div class="bubble">
+              こんにちは！補助金・支援制度の質問にお答えします。<br/>
+              例：「子育て家庭の給付金制度について教えて」
+              </div>
+            </div>
+          </div>
 
-<hr/>
-<section> 
-  <h3>インデックス作成（PDF / TXT / Markdown）</h3>
-  <p class="muted">ファイルを選んでアップロードすると <code>data/pdf</code> に保存されます。その後「再インデックス」を押すと検索に反映されます。</p>
+          <div class="card-body border-top">
+            <div class="composer">
+              <label for="q" class="form-label mb-2">質問</label>
+              <textarea id="q" rows="3" class="form-control" placeholder="例：子育て家庭の給付金制度について教えて"></textarea>
+              <div class="d-flex gap-2 align-items-center mt-2">
+                <button id="ask" class="btn btn-yolk" type="button">送信</button>
+              </div>
+            </div>
+          </div>
+        </div>
 
-  <input id="files" type="file" multiple accept=".pdf,.txt,.md,.markdown" />
-  <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap">
-    <button id="upload">アップロード</button>
-    <button id="ingest">再インデックス</button>
-  </div>
-  <pre id="ingestOut"></pre>
-</section>
+        <!-- 結果（プレーン出力も残す場合） -->
+        <div class="section-card mt-3 d-none">
+          <h3 class="h6">結果（テキスト）</h3>
+          <pre id="answer" class="answer mb-0"></pre>
+          <div id="sources"></div>
+        </div>
 
-<script>
-const $ = (s)=>document.querySelector(s);
+      </div>
 
-$("#upload").onclick = async ()=>{
-  const input = $("#files");
-  if (!input.files || input.files.length === 0) {
-    alert("ファイルを選んでください");
-    return;
-  }
-  const fd = new FormData();
-  for (const f of input.files) fd.append("files", f);
-  const r = await fetch("/api/upload", { method:"POST", body: fd });
-  const j = await r.json();
-  $("#ingestOut").textContent = JSON.stringify(j, null, 2);
-  if (j.ok) location.reload(); // 成功時は一覧を更新
-};
+      <div class="col-lg-4">
+        <!-- 投入済みファイル一覧 -->
+        <div class="section-card">
+          <h3 class="h6 mb-3">投入済みファイル</h3>
+          {% if not has_index %}
+            <p class="muted">まだインデックスが作成されていません。まずは「再インデックス」を実行してください。</p>
+          {% else %}
+            {% if files and files|length > 0 %}
+              <div class="table-responsive">
+                <table class="table table-sm align-middle" aria-label="Indexed documents">
+                  <thead>
+                    <tr><th>ファイル名</th><th>チャンク数</th><th>ページ数</th></tr>
+                  </thead>
+                  <tbody>
+                  {% for f in files %}
+                    <tr>
+                      <td>{{ f.name }}</td>
+                      <td>{{ f.chunks }}</td>
+                      <td>{{ f.pages if f.pages is not none else "-" }}</td>
+                    </tr>
+                  {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            {% else %}
+              <p class="muted">インデックスはありますが、ファイルが見つかりませんでした。</p>
+            {% endif %}
+          {% endif %}
+        </div>
 
-$("#ingest").onclick = async ()=>{
-  const r = await fetch("/api/ingest", {method:"POST"});
-  const j = await r.json();
-  $("#ingestOut").textContent = JSON.stringify(j, null, 2);
-  if (j.ok) location.reload(); // 成功時は一覧を更新
-};
+        <!-- アップロード / インデックス -->
+        <div class="section-card mt-3">
+          <h3 class="h6">インデックス作成（PDF / TXT / Markdown）</h3>
+          <p class="muted">ファイルを選んでアップロードすると <code>data/pdf</code> に保存されます。その後「再インデックス」を押すと検索に反映されます。</p>
 
-$("#ask").onclick = async ()=>{
-  const query = $("#q").value;
-  const mode = $("#mode").value;
-  const r = await fetch("/api/ask", {
-    method:"POST",
-    headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({query, mode})
-  });
-  const j = await r.json();
-  if(!j.ok){ $("#answer").textContent = j.error; $("#sources").innerHTML=""; return; }
-  $("#answer").textContent = j.answer;
-  $("#sources").innerHTML = (j.sources || []).map(s => {
+          <div class="mb-2">
+            <input id="files" type="file" multiple accept=".pdf,.txt,.md,.markdown" class="form-control"/>
+          </div>
+          <div class="d-flex gap-2 flex-wrap">
+            <button id="upload" class="btn btn-outline-secondary btn-sm">アップロード</button>
+            <button id="ingest" class="btn btn-outline-secondary btn-sm">再インデックス</button>
+          </div>
+          <pre id="ingestOut" class="mt-3 small mb-0" style="max-height: 180px; overflow:auto;"></pre>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Bootstrap JS (optional, for dropdowns etc.) -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+  <script>
+  console.log('[init] inline script started');
+  const $ = (s)=>document.querySelector(s);
+  const chat = $("#chat");
+
+  /** Create message node */
+  const createMsg = ({role, text, sourcesHTML}={})=>{
+    const wrap = document.createElement("div");
+    wrap.className = "msg " + (role === "user" ? "user" : "ai");
+    const avatar = document.createElement("div");
+    avatar.className = "avatar";
+    avatar.textContent = role === "user" ? "You" : "AI";
+    const bubble = document.createElement("div");
+    bubble.className = "bubble";
+    bubble.textContent = text || "";
+    wrap.appendChild(avatar);
+    wrap.appendChild(bubble);
+
+    if (sourcesHTML && role !== "user") {
+      const src = document.createElement("div");
+      src.className = "sources";
+      src.innerHTML = sourcesHTML;
+      bubble.appendChild(src);
+    }
+    return {wrap, bubble};
+  };
+
+  /** Typing dots (AI loading) */
+  const createTyping = ()=>{
+    const wrap = document.createElement("div");
+    wrap.className = "msg ai";
+    const avatar = document.createElement("div");
+    avatar.className = "avatar";
+    avatar.textContent = "AI";
+    const bubble = document.createElement("div");
+    bubble.className = "bubble";
+    bubble.innerHTML = '<span class="typing-dots" aria-label="検索中"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span>';
+    wrap.appendChild(avatar);
+    wrap.appendChild(bubble);
+    return wrap;
+  };
+
+  const scrollToBottom = ()=> chat.scrollTop = chat.scrollHeight;
+
+  const setStatus = (html) => { $("#status").innerHTML = html || ""; };
+  const showLoading = (msg="検索中です…") =>
+    setStatus(`<span class="small text-muted">${msg}</span>`);
+
+  $("#upload").onclick = async ()=>{
+    const input = $("#files");
+    if (!input.files || input.files.length === 0) {
+      alert("ファイルを選んでください");
+      return;
+    }
+    const fd = new FormData();
+    for (const f of input.files) fd.append("files", f);
+    const r = await fetch("/api/upload", { method:"POST", body: fd });
+    const j = await r.json();
+    $("#ingestOut").textContent = JSON.stringify(j, null, 2);
+    if (j.ok) location.reload();
+  };
+
+  $("#ingest").onclick = async ()=>{
+    const r = await fetch("/api/ingest", {method:"POST"});
+    const j = await r.json();
+    $("#ingestOut").textContent = JSON.stringify(j, null, 2);
+    if (j.ok) location.reload();
+  };
+
+  const buildSourcesHTML = (sources=[])=>{
+  if (!sources || sources.length === 0) return "";
+  return sources.map(s=>{
     const u = s.url ? `<a href="${s.url}" target="_blank" rel="noopener noreferrer">${s.title||s.url}</a>` : (s.title||"");
-    const score = s.score!=null ? `（score:${s.score.toFixed? s.score.toFixed(3): s.score}）` : "";
+    const scoreVal = (s.score != null && typeof s.score.toFixed === 'function')
+      ? s.score.toFixed(3)
+      : (s.score != null ? s.score : "");
+    const score = scoreVal !== "" ? `（score:${scoreVal}）` : "";
     const kind = s.kind ? ` [${s.kind}]` : "";
-    return `<div class="src">${u}${score}${kind}</div>`;
+    return `<div class="src">• ${u}${score}${kind}</div>`;
   }).join("");
-};
-</script>
+  };
+
+  const ask = async ()=>{
+    const btn = $("#ask");
+    const query = $("#q").value;
+    const mode = $("#mode").value;
+
+    if (!query.trim()){
+      alert("質問を入力してください");
+      return;
+    }
+
+    // append user message
+    const {wrap: userWrap} = createMsg({role:"user", text: query});
+    chat.appendChild(userWrap);
+    $("#q").value = "";
+    scrollToBottom();
+
+    // show AI typing
+    const typing = createTyping();
+    chat.appendChild(typing);
+    showLoading();  // ステータス（右上）
+    btn.disabled = true;
+
+    // also clear legacy outputs (kept hidden)
+    const ansEl = $("#answer");
+    if (ansEl) ansEl.textContent = "";
+
+    const srcEl = $("#sources");
+    if (srcEl) srcEl.innerHTML = "";
+
+    try{
+      const r = await fetch("/api/ask", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({query, mode})
+      });
+      const j = await r.json();
+
+      // remove typing
+      typing.remove();
+
+      if(!j.ok){
+        const {wrap} = createMsg({role:"ai", text: j.error || "エラーが発生しました"});
+        chat.appendChild(wrap);
+        scrollToBottom();
+        return;
+      }
+
+      // show AI answer in bubble + sources
+      const sourcesHTML = buildSourcesHTML(j.sources || []);
+      const {wrap} = createMsg({role:"ai", text: j.answer || "", sourcesHTML});
+      chat.appendChild(wrap);
+      scrollToBottom();
+
+      // legacy (optional)
+      $("#answer").textContent = j.answer || "";
+      $("#sources").innerHTML = sourcesHTML;
+
+    }catch(e){
+      typing.remove();
+      const {wrap} = createMsg({role:"ai", text:"通信に失敗しました"});
+      chat.appendChild(wrap);
+      scrollToBottom();
+    }finally{
+      setStatus("");     // ローディングOFF
+      $("#ask").disabled = false;
+      $("#q").focus();
+    }
+  };
+
+  document.addEventListener('click', (e)=>{
+  const btn = e.target.closest('#ask');
+  if (btn) {
+    console.log('[click] ask button');
+    ask();
+  }
+  });
+
+  // Ctrl/Cmd + Enter
+  document.addEventListener('keydown', (e)=>{
+    const q = $("#q");
+    if (!q) return;
+    if (document.activeElement === q && e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      console.log('[keydown] ask via shortcut');
+      ask();
+    }
+  });
+  </script>
+</body>
 </html>

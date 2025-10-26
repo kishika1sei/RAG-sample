@@ -8,3 +8,5 @@ class Config:
     EMBED_MODEL = os.getenv("EMBED_MODEL", "text-embedding-3-small")
     PDF_DIR = os.getenv("PDF_DIR", "data/pdf")
     INDEX_DIR = os.getenv("INDEX_DIR", "data/index")
+    CTX_MAX_CHUNKS = 4
+    CTX_MAX_CHARS = 1500
