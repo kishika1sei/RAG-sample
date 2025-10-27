@@ -111,8 +111,14 @@
             <input id="files" type="file" multiple accept=".pdf,.txt,.md,.markdown" class="form-control"/>
           </div>
           <div class="d-flex gap-2 flex-wrap">
-            <button id="upload" class="btn btn-outline-secondary btn-sm">アップロード</button>
-            <button id="ingest" class="btn btn-outline-secondary btn-sm">再インデックス</button>
+            <button id="upload" class="btn btn-outline-secondary btn-sm">
+              <span class="spinner-border spinner-border-sm me-1 d-none" role="status" aria-hidden="true"></span>
+              <span class="btn-label">アップロード</span>
+            </button>
+            <button id="ingest" class="btn btn-outline-secondary btn-sm">
+              <span class="spinner-border spinner-border-sm me-1 d-none" role="status" aria-hidden="true"></span>
+              <span class="btn-label">インデックス</span>
+            </button>
           </div>
           <pre id="ingestOut" class="mt-3 small mb-0" style="max-height: 180px; overflow:auto;"></pre>
         </div>
@@ -127,6 +133,28 @@
   console.log('[init] inline script started');
   const $ = (s)=>document.querySelector(s);
   const chat = $("#chat");
+    const setButtonLoading = (btn, loading, busyText) => {
+    const spin = btn.querySelector('.spinner-border');
+    const label = btn.querySelector('.btn-label');
+    if (!spin || !label) return; // フォールバック
+    if (loading) {
+      spin.classList.remove('d-none');
+      btn.disabled = true;
+      btn.dataset.label = label.textContent;
+      label.textContent = busyText || label.textContent;
+    } else {
+      spin.classList.add('d-none');
+      btn.disabled = false;
+      if (btn.dataset.label) label.textContent = btn.dataset.label;
+    }
+  };
+
+  const runWithSpinner = async (btn, busyText, fn) => {
+    setButtonLoading(btn, true, busyText);
+    try { return await fn(); }
+    finally { setButtonLoading(btn, false); }
+  };
+
 
   /** Create message node */
   const createMsg = ({role, text, sourcesHTML}={})=>{
@@ -171,26 +199,48 @@
   const showLoading = (msg="検索中です…") =>
     setStatus(`<span class="small text-muted">${msg}</span>`);
 
-  $("#upload").onclick = async ()=>{
-    const input = $("#files");
-    if (!input.files || input.files.length === 0) {
-      alert("ファイルを選んでください");
-      return;
-    }
+  $("#upload").onclick = async () => {
+  const btn = $("#upload");
+  const input = $("#files");
+  if (!input.files || input.files.length === 0) {
+    alert("ファイルを選んでください");
+    return;
+  }
+  await runWithSpinner(btn, "アップロード中…", async () => {
     const fd = new FormData();
     for (const f of input.files) fd.append("files", f);
     const r = await fetch("/api/upload", { method:"POST", body: fd });
     const j = await r.json();
     $("#ingestOut").textContent = JSON.stringify(j, null, 2);
-    if (j.ok) location.reload();
+    if (j.ok) {
+      // location.reload(); // ←リロードせず、必要ならUIを更新
+      // 成功メッセージ
+      $("#ingestOut").textContent += "\n✅ アップロード完了";
+    } else {
+      alert(j.error || "アップロードに失敗しました");
+    }
+  });
   };
 
-  $("#ingest").onclick = async ()=>{
-    const r = await fetch("/api/ingest", {method:"POST"});
-    const j = await r.json();
-    $("#ingestOut").textContent = JSON.stringify(j, null, 2);
-    if (j.ok) location.reload();
+  document.querySelector("#ingest").onclick = async () => {
+    const btn = document.querySelector("#ingest");
+    await runWithSpinner(btn, "インデックス中…", async () => {
+      const r = await fetch("/api/ingest", { method: "POST" });
+      const j = await r.json();
+      document.querySelector("#ingestOut").textContent = JSON.stringify(j, null, 2);
+
+      if (j.ok) {
+        document.querySelector("#ingestOut").textContent += "\n✅ インデックス完了";
+        // 完了表示を少し見せてからリロード
+        setTimeout(() => {
+          location.reload();
+        }, 600);
+      } else {
+        alert(j.error || "再インデックスに失敗しました");
+      }
+    });
   };
+
 
   const buildSourcesHTML = (sources=[])=>{
   if (!sources || sources.length === 0) return "";

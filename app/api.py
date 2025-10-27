@@ -1,19 +1,61 @@
 # app/api.py
 from flask import Blueprint, request, jsonify, current_app, g
-from werkzeug.utils import secure_filename
+from werkzeug.utils import secure_filename as wz_secure_filename  # 既存のままでもOK
 from .services.rag import answer
 from .services.doc_utils import ingest_local_dir, is_allowed_ext
 import os
+import unicodedata
+import re
+import secrets
 
 api_bp = Blueprint("api", __name__, url_prefix="/api")
 
+def safe_filename_keep_unicode(filename: str) -> str:
+    """
+    日本語などのUnicodeを残しつつ、安全なファイル名に整える。
+    - ディレクトリ区切りや制御文字を除去
+    - 正規化(NFKC)
+    - 長すぎるファイル名を適度にカット
+    """
+    # ベース名だけに（Windows由来のパス混入対策）
+    name = os.path.basename(filename)
+
+    # 正規化（全角→半角などの揺れを吸収）
+    name = unicodedata.normalize("NFKC", name)
+
+    # 制御文字の除去
+    name = re.sub(r'[\x00-\x1f\x7f]+', '', name)
+
+    # パス区切り記号の無効化
+    name = name.replace('/', '_').replace('\\', '_')
+
+    # 先頭や末尾のドット/空白を除去（隠しファイル化やトリム事故回避）
+    name = name.strip().strip('.')
+
+    # 無名対策
+    if not name:
+        name = "file"
+
+    # 長すぎる場合はベース名を縮める
+    base, ext = os.path.splitext(name)
+    MAX_BASE = 150  # OS制限をざっくり考慮
+    if len(base) > MAX_BASE:
+        base = base[:MAX_BASE]
+    # 拡張子はそのまま（is_allowed_ext で判定するため）
+    return base + ext
+
+def uniquify_path(dirpath: str, filename: str) -> str:
+    """重複があれば _1, _2 ... と連番を付けて衝突回避"""
+    base, ext = os.path.splitext(filename)
+    candidate = filename
+    i = 1
+    while os.path.exists(os.path.join(dirpath, candidate)):
+        candidate = f"{base}_{i}{ext}"
+        i += 1
+    return os.path.join(dirpath, candidate)
 
 @api_bp.post("/upload")
 def api_upload():
-    """
-    フロントから複数ファイルを受け取り、UPLOAD_DIR(PDF_DIR)へ保存。
-    許可拡張子: .pdf .txt .md .markdown
-    """
     if "files" not in request.files:
         return jsonify({"ok": False, "error": "files フィールドが見つかりません", "trace_id": getattr(g, "trace_id", "")}), 400
 
@@ -25,15 +67,25 @@ def api_upload():
     for f in files:
         if not f.filename:
             continue
-        filename = secure_filename(f.filename)
+
+        # ← ここを secure_filename から置き換え
+        filename_raw = f.filename
+        filename = safe_filename_keep_unicode(filename_raw)
+
+        # 許可拡張子チェック（拡張子は normalize 後のものを使用）
         if not is_allowed_ext(filename):
-            skipped.append({"name": filename, "reason": "拡張子が許可されていません"})
+            skipped.append({"name": filename_raw, "reason": "拡張子が許可されていません"})
             continue
-        path = os.path.join(upload_dir, filename)
+
+        # 同名衝突を回避
+        path = uniquify_path(upload_dir, filename)
+
+        # 保存
         f.save(path)
-        saved.append(filename)
+        saved.append(os.path.basename(path))
 
     return jsonify({"ok": True, "saved": saved, "skipped": skipped, "upload_dir": upload_dir, "trace_id": getattr(g, "trace_id", "")})
+
 
 
 @api_bp.post("/ingest")
