@@ -143,7 +143,7 @@ def google_news(q: str, *, hl: str = "ja", gl: str = "jp", num: int = 10) -> Lis
     data = serpapi_call(params)
     return normalize_news(data)
 
-# === クエリテンプレ（覚えておくと便利） ===
+# === クエリテンプレ ===
 def q_site(keyword: str, site: str) -> str:
     return f'site:{site} "{keyword}"'
 

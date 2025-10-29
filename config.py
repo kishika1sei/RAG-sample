@@ -10,3 +10,4 @@ class Config:
     INDEX_DIR = os.getenv("INDEX_DIR", "data/index")
     CTX_MAX_CHUNKS = 4
     CTX_MAX_CHARS = 1500
+    SYS_PROMPT = os.getenv("SYS_PROMPT", "あなたは日本語で正確に答えるアシスタントです。根拠に基づき簡潔に回答し、不明な点は正直に『不明』と述べてください。")

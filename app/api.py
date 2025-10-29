@@ -125,3 +125,16 @@ def api_ask():
             "schema_version": 1, "trace_id": getattr(g, "trace_id", ""), "error": str(e), "where": "api_ask"
         }})
         return jsonify({"ok": False, "error": str(e), "trace_id": getattr(g, "trace_id", "")}), 500
+
+@api_bp.post("/reset")
+def api_reset():
+    """
+    （任意）サーバ側に会話スコープがある場合のみ。
+    セッションやDB上の会話履歴・一時状態を初期化。
+    """
+    try:
+        # 例: session["conv"] = {"id": new_id, "messages": [], ...}
+        # 今の実装に会話スコープが無いならダミーでOK
+        return jsonify({"ok": True, "message": "reset done", "trace_id": getattr(g, "trace_id", "")})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e), "trace_id": getattr(g, "trace_id", "")}), 500

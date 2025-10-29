@@ -38,6 +38,7 @@
                 <option value="hybrid">Hybrid（両方）</option>
               </select>
               <span id="status" class="ms-auto small text-muted" aria-live="polite"></span>
+              <button id="reset" class="btn btn-sm btn-outline-secondary" type="button">リセット</button>
             </div>
           </div>
 
@@ -46,8 +47,8 @@
             <div class="msg ai">
               <div class="avatar">AI</div>
               <div class="bubble">
-              こんにちは！補助金・支援制度の質問にお答えします。<br/>
-              例：「子育て家庭の給付金制度について教えて」
+こんにちは！補助金・支援制度の質問にお答えします。<br/>
+例：「子育て家庭の給付金制度について教えて」
               </div>
             </div>
           </div>
@@ -130,6 +131,55 @@
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 
   <script>
+  // リセットボタン押したときにHTML描画する関数
+  const initialGreetingHTML = `
+    <div class="msg ai">
+      <div class="avatar">AI</div>
+      <div class="bubble">
+こんにちは！補助金・支援制度の質問にお答えします。<br/>
+例：「子育て家庭の給付金制度について教えて」
+      </div>
+    </div>
+  `;
+  // リセット時に進行中の通信を止める
+  function renderInitialGreeting() {
+    const wrap = document.createElement('div');
+    wrap.innerHTML = initialGreetingHTML.trim();
+    return wrap.firstElementChild;
+  }
+  let inflightController = null;
+
+  function abortInflight() {
+    try { inflightController?.abort(); } catch(_) {}
+    inflightController = null;
+  }
+
+  function resetChatUI({ resetMode = false } = {}) {
+    // 1) 進行中の通信があれば中断（任意）
+    abortInflight();
+
+    // 2) チャット欄を初期状態へ
+    chat.innerHTML = '';
+    chat.appendChild(renderInitialGreeting());
+    chat.scrollTop = 0;
+
+    // 3) ステータスと旧出力領域をクリア
+    setStatus('');
+    const ansEl = $("#answer"); if (ansEl) ansEl.textContent = '';
+    const srcEl = $("#sources"); if (srcEl) srcEl.innerHTML = '';
+
+    // 4) 入力欄を空にしてフォーカス
+    $("#q").value = '';
+    $("#q").focus();
+
+    // 5) モードも既定に戻す
+    if (resetMode) $("#mode").value = "doc";
+
+    // // 6)会話IDを新規採番（UI/ログ用途）
+    // window.currentConversationId =
+    //   (crypto.randomUUID?.() || ('c_' + Date.now() + '_' + Math.random().toString(16).slice(2)));
+    // history.replaceState({}, '', `?c=${window.currentConversationId}`);
+  }
   console.log('[init] inline script started');
   const $ = (s)=>document.querySelector(s);
   const chat = $("#chat");
@@ -265,60 +315,77 @@
       return;
     }
 
-    // append user message
+    // ユーザメッセージを追加
     const {wrap: userWrap} = createMsg({role:"user", text: query});
     chat.appendChild(userWrap);
     $("#q").value = "";
     scrollToBottom();
 
-    // show AI typing
+    // AIのタイピング表示
     const typing = createTyping();
     chat.appendChild(typing);
     showLoading();  // ステータス（右上）
     btn.disabled = true;
 
-    // also clear legacy outputs (kept hidden)
+    // 既存の回答・ソースをクリア
     const ansEl = $("#answer");
     if (ansEl) ansEl.textContent = "";
 
     const srcEl = $("#sources");
     if (srcEl) srcEl.innerHTML = "";
 
-    try{
+    try {
+      const ctrl = new AbortController();
+      inflightController = ctrl;
+
       const r = await fetch("/api/ask", {
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({query, mode})
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ query: query.trim(), mode }),
+        signal: ctrl.signal
       });
+
+      // HTTPエラー時は安全に処理
+      if (!r.ok) {
+        typing.remove();
+        const {wrap} = createMsg({role:"ai", text:`エラーが発生しました (HTTP ${r.status})`});
+        chat.appendChild(wrap);
+        scrollToBottom();
+        return;
+      }
+
       const j = await r.json();
 
-      // remove typing
       typing.remove();
 
-      if(!j.ok){
+      if (!j.ok) {
         const {wrap} = createMsg({role:"ai", text: j.error || "エラーが発生しました"});
         chat.appendChild(wrap);
         scrollToBottom();
         return;
       }
 
-      // show AI answer in bubble + sources
       const sourcesHTML = buildSourcesHTML(j.sources || []);
       const {wrap} = createMsg({role:"ai", text: j.answer || "", sourcesHTML});
       chat.appendChild(wrap);
       scrollToBottom();
 
-      // legacy (optional)
-      $("#answer").textContent = j.answer || "";
-      $("#sources").innerHTML = sourcesHTML;
+      if (ansEl) ansEl.textContent = j.answer || "";
+      if (srcEl) srcEl.innerHTML = sourcesHTML;
 
-    }catch(e){
+    } catch (e) {
       typing.remove();
+      if (e.name === "AbortError") {
+        // リセット等による中断 → 何も表示しない
+        setStatus("");
+        return;
+      }
       const {wrap} = createMsg({role:"ai", text:"通信に失敗しました"});
       chat.appendChild(wrap);
       scrollToBottom();
-    }finally{
-      setStatus("");     // ローディングOFF
+    } finally {
+      inflightController = null;
+      setStatus("");
       $("#ask").disabled = false;
       $("#q").focus();
     }
@@ -340,6 +407,12 @@
       e.preventDefault();
       console.log('[keydown] ask via shortcut');
       ask();
+    }
+  });
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('#reset');
+    if (btn) {
+      resetChatUI({ resetMode: false }); // モードも初期化したいなら true
     }
   });
   </script>

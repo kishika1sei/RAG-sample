@@ -46,7 +46,6 @@ def read_preview(path: str, limit: int = 3000) -> str:
     return text[:limit]
 
 # ===== 分割・インデックス =====
-# 日本語の形態素って何？
 def _split(text: str, size: int = 800, overlap: int = 120) -> List[str]:
     """
     シンプルな固定長スライス（日本語の形態素分割は後で拡張でOK）

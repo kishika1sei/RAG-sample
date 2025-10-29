@@ -15,7 +15,7 @@ def get_client() -> OpenAI:
         _client_singleton = OpenAI(api_key=key)  # envから拾う場合は OpenAI() でもOK
     return _client_singleton
 
-# ---------- 埋め込み ----------
+# ====== 埋め込み ======
 
 def embed_texts(texts: List[str], model: str) -> List[List[float]]:
     """後方互換：埋め込みのみ返す（計測・usageは不要な場面向け）"""
@@ -44,7 +44,7 @@ def embed_texts_with_meta(texts: List[str], model: str) -> Tuple[List[List[float
     meta = {"ms": ms, "usage": usage, "model": model}
     return embs, meta
 
-# ---------- チャット補完 ----------
+# ====== チャット補完 ======
 
 def chat(messages: List[Dict], model: str) -> str:
     """後方互換：本文のみ返す"""
