@@ -1,5 +1,5 @@
 # app/services/rag.py
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Tuple
 from flask import current_app, g
 from .llm_utils import chat, chat_with_meta
 from .vectorstore import faiss_exists, faiss_search
@@ -14,6 +14,28 @@ import json, re
 
 _JSON_OBJ = re.compile(r'\{.*\}', re.DOTALL)
 ALLOWED_KEYWORDS = ("補助金", "助成金", "給付金", "支援制度", "支援金", "助成制度")
+
+# 追加: 「不明/ノイズ」検出用のパターン
+_UNCERTAIN_PATTERNS = [
+    r"不明(です|でした)?",
+    r"わかりません",
+    r"分かりません",
+    r"判断できません",
+    r"情報が(不足|見つかり)ません",
+    r"資料が(不足|ありません)",
+    r"該当(資料|情報|ドキュメント)が見つかりません",
+    r"回答できません",
+    r"記載がありません",
+    r"確認できません",
+    r"特定できません",
+]
+_NOISE_PATTERNS = [
+    r"[…・。．]{3,}",
+    r"[!?！？]{3,}",
+    r"^(不明)[…・。．！？\s　]*$"
+]
+_UNCERTAIN_RE = re.compile("|".join(_UNCERTAIN_PATTERNS))
+_NOISE_RE = re.compile("|".join(_NOISE_PATTERNS))
 
 def _parse_json_loose(text: str) -> dict:
     """```json .. ``` や前後ノイズを許容し、最初の { ... } を抜いて読む"""
@@ -56,7 +78,6 @@ def _emit_decision_log(*, stage: str, query: str, mode: str, timing: Dict[str,in
 # 初期プロンプト（設定で差し替え可）
 DEFAULT_SYS = "あなたは日本語で正確に答えるアシスタントです。補助金や支援制度についてのみの質問に対し、根拠に基づき簡潔に回答し、不明な点は正直に『不明』と述べてください。絶対に関係のない質問には答えないでください。"
 
-
 def _fetch_text(url: str, timeout: int = 10) -> str:
     try:
         html = requests.get(url, timeout=timeout).text
@@ -64,7 +85,6 @@ def _fetch_text(url: str, timeout: int = 10) -> str:
         return soup.get_text(separator="\n")
     except Exception:
         return ""
-
 
 # ===== 要約処理 =====
 def _summarize(contexts: List[str], query: str,
@@ -102,7 +122,6 @@ def _summarize(contexts: List[str], query: str,
 
     return text
 
-
 # ===== ドキュメントコンテキストプレビュー =====
 def _context_preview_from_doc_hits(doc_hits: List[Dict[str, Any]], limit: int = 3) -> List[str]:
     out = []
@@ -112,7 +131,6 @@ def _context_preview_from_doc_hits(doc_hits: List[Dict[str, Any]], limit: int = 
         snippet = (read_preview(h.get("path", ""), limit=300) or h.get("text") or h.get("snippet") or "")[:200]
         out.append(f"[{name} p.{page}] {snippet}")
     return out
-
 
 # ===== Web検索コンテキストプレビュー =====
 def _context_preview_from_web_hits(web_hits: List[Dict[str, Any]], limit: int = 3) -> List[str]:
@@ -191,7 +209,6 @@ def _doc(query: str, params: Dict[str, Any], timing: Dict[str, int], steps: Dict
     steps["context_preview_doc"] = _context_preview_from_doc_hits(hits)
     return {"answer": ans, "doc_hits": hits, "sources": sources}
 
-
 # ===== Web検索処理 =====
 def _web(query: str, params: Dict[str, Any], timing: Dict[str, int], steps: Dict[str, Any]) -> Dict[str, Any]:
     t = time.perf_counter()
@@ -215,6 +232,37 @@ def _web(query: str, params: Dict[str, Any], timing: Dict[str, int], steps: Dict
     ans = _summarize(contexts, query, timing=timing, steps=steps) if contexts else "適切なWeb結果が見つかりませんでした。"
     return {"answer": ans, "web_hits": web_hits, "sources": sources}
 
+# ===== 「不明/ノイズ」かどうかのUI向け判定 =====
+def _decide_hide_sources(answer_text: str,
+                         doc_hits: List[Dict[str, Any]],
+                         web_hits: List[Dict[str, Any]]) -> Tuple[bool, str]:
+    """
+    回答が『不明』系 or ノイズっぽいなら True を返す。
+    返り値: (hide, reason)
+    """
+    t = (answer_text or "").strip()
+    if not t:
+        return True, "empty_answer"
+
+    # 代表的なフォールバック文言
+    base_unknowns = (
+        "該当ドキュメントが見つかりませんでした。",
+        "適切なWeb結果が見つかりませんでした。",
+    )
+    if any(b in t for b in base_unknowns):
+        return True, "no_results"
+
+    # 「不明」やノイズ記号の検出
+    if _UNCERTAIN_RE.search(t) or _NOISE_RE.search(t):
+        return True, "uncertain_or_noise"
+
+    # 異常に短く、かつ不明語を含む
+    if len(t) <= 8 and ("不明" in t or "不確" in t):
+        return True, "too_short_unknown"
+
+    # ここまで引っかからなければ表示可
+    return False, ""
+
 # ===== メイン回答関数 =====
 def answer(query: str, mode: str = "doc", debug: bool = False) -> Dict[str, Any]:
     t0 = time.perf_counter()
@@ -236,7 +284,8 @@ def answer(query: str, mode: str = "doc", debug: bool = False) -> Dict[str, Any]
     if label != "IN" or score < current_app.config.get("SCOPE_THRESHOLD", 0.6):
         _emit_decision_log(stage="early_reject", query=query, mode=mode, timing=timing,
                            scope=steps["scope"], decision="reject_scope")
-        return {"answer": FIXED_MSG, "sources": []}
+        # 出典非表示を明示的に付与
+        return {"answer": FIXED_MSG, "sources": [], "meta": {"show_sources": False, "hide_reason": "out_of_scope"}}
 
     # 1) 生成（一本化）
     answer_text, sources, doc_hits, web_hits, failover = generate_answer(query, mode, params, timing, steps)
@@ -254,15 +303,24 @@ def answer(query: str, mode: str = "doc", debug: bool = False) -> Dict[str, Any]
             _emit_decision_log(stage="validated", query=query, mode=mode, timing=timing,
                                scope=steps["scope"], validator=validator_log, decision="reject_validate",
                                doc_hits=doc_hits, web_hits=web_hits, failover=failover)
-            return {"answer": FIXED_MSG, "sources": []}
+            return {"answer": FIXED_MSG, "sources": [], "meta": {"show_sources": False, "hide_reason": "validator_reject"}}
     else:
         steps["validator"] = {"rule": []}
+
+    # 2.5) UI用「出典表示/非表示」判定
+    hide_sources = False
+    hide_reason = ""
+    if current_app.config.get("HIDE_SOURCES_ON_UNCERTAIN", True):
+        hide_sources, hide_reason = _decide_hide_sources(answer_text, doc_hits, web_hits)
 
     # 3) 仕上げ
     timing["total_ms"] = int((time.perf_counter() - t0) * 1000)
     steps["failover"] = failover
 
     ui_sources = _summarize_sources(doc_hits, web_hits)
+    if hide_sources:
+        ui_sources = []
+
     _contexts_combined = _dedup_preview(
         (steps.get("context_preview_doc", []) + steps.get("context_preview_web", [])), limit=6
     )
@@ -283,6 +341,7 @@ def answer(query: str, mode: str = "doc", debug: bool = False) -> Dict[str, Any]
             "scope": steps.get("scope"),
             "scope_raw": getattr(g, "scope_raw", None),
             "validator": steps.get("validator"),
+            "ui": {"show_sources": not hide_sources, "hide_reason": hide_reason},
         },
     }
 
@@ -293,7 +352,14 @@ def answer(query: str, mode: str = "doc", debug: bool = False) -> Dict[str, Any]
 
     current_app.logger.info("rag.trace", extra={"trace": trace})
 
-    payload: Dict[str, Any] = {"answer": answer_text, "sources": ui_sources}
+    payload: Dict[str, Any] = {
+        "answer": answer_text,
+        "sources": ui_sources,
+        "meta": {"show_sources": not hide_sources}
+    }
+    if hide_sources:
+        payload["meta"]["hide_reason"] = hide_reason
+
     if debug and current_app.config.get("DEBUG_RAG", False):
         payload["trace"] = trace
     return payload
@@ -324,7 +390,7 @@ def in_scope_llm(query: str) -> tuple[str, float, str]:
     messages = [{"role":"system","content":sys_msg}, {"role":"user","content":user}]
 
     kwargs = {"model": llm_model, "temperature": 0, "max_tokens": 64}
-    # ★ 対応モデルならJSON出力を強制
+    # JSON出力を強制
     try:
         kwargs["response_format"] = {"type": "json_object"}
     except Exception:
@@ -392,7 +458,6 @@ def generate_answer(query: str, mode: str,
         raise ValueError(f"invalid mode: {mode}")
     d = _doc(query, params, timing, steps)
     return d["answer"], d.get("sources", []), d.get("doc_hits", []), [], None
-
 
 # ===== 回答バリデーション =====
 FIXED_MSG = "このチャットは補助金・助成制度に関する質問のみ受け付けます。"
