@@ -10,7 +10,6 @@ from bs4 import BeautifulSoup
 import time
 import json, re
 
-# ===TODOログ出力用(後で消す)===
 
 _JSON_OBJ = re.compile(r'\{.*\}', re.DOTALL)
 ALLOWED_KEYWORDS = ("補助金", "助成金", "給付金", "支援制度", "支援金", "助成制度")
